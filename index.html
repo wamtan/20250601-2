@@ -15,7 +15,6 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font
 #ar-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 #tap-layer { position: absolute; inset: 0; }
 #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
-
 #hint {
   position: absolute;
   top: env(safe-area-inset-top, 16px); left: 50%; transform: translateX(-50%);
@@ -115,8 +114,9 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<!-- three.js + GLTFLoader を同じCDNから読む -->
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 
 <script>
 const video = document.getElementById('video');
@@ -140,7 +140,6 @@ let renderer, scene, camera, clock;
 let templateGltf = null;
 let placedObjects = [];
 let currentAnimIndex = 0;
-let animNames = [];
 let running = false;
 
 scaleSlider.addEventListener('input', () => {
@@ -164,7 +163,7 @@ async function startCamera() {
     window.addEventListener('resize', onResize);
     loadCharacter();
   } catch(e) {
-    document.getElementById('start-label').textContent = 'カメラアクセスが拒否されました。\nブラウザの設定を確認してください。';
+    document.getElementById('start-label').textContent = 'カメラアクセスが拒否されました。設定を確認してください。';
   }
 }
 
@@ -181,8 +180,7 @@ function initThree() {
   camera.position.z = 5;
   clock = new THREE.Clock();
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-  scene.add(ambient);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
   const dir = new THREE.DirectionalLight(0xffffff, 1.0);
   dir.position.set(4, 8, 5);
   scene.add(dir);
@@ -203,12 +201,17 @@ function loadCharacter() {
   loadingOverlay.style.display = 'flex';
   loadingText.textContent = 'character.glb を読み込み中...';
 
+  if (!THREE.GLTFLoader) {
+    loadingText.textContent = 'GLTFLoaderの読み込みに失敗しました。リロードしてください。';
+    return;
+  }
+
   const loader = new THREE.GLTFLoader();
   loader.load(
     'character.glb',
     (gltf) => {
       templateGltf = gltf;
-      animNames = gltf.animations.length > 0
+      const animNames = gltf.animations.length > 0
         ? gltf.animations.map((a, i) => a.name || ('アニメ' + (i + 1)))
         : ['(静止)'];
 
@@ -245,48 +248,38 @@ function loadCharacter() {
 
 function cloneGltf(gltf) {
   const clonedScene = gltf.scene.clone(true);
-
-  const srcSkins = [];
-  const dstSkins = [];
+  const srcSkins = [], dstSkins = [];
   gltf.scene.traverse(n => { if (n.isSkinnedMesh) srcSkins.push(n); });
   clonedScene.traverse(n => { if (n.isSkinnedMesh) dstSkins.push(n); });
-
   const boneByName = {};
   clonedScene.traverse(n => { if (n.isBone) boneByName[n.name] = n; });
-
   dstSkins.forEach((dst, i) => {
     const src = srcSkins[i];
     const newBones = src.skeleton.bones.map(b => boneByName[b.name] || b);
     dst.bind(new THREE.Skeleton(newBones, src.skeleton.boneInverses), dst.matrixWorld);
   });
-
   return { scene: clonedScene, animations: gltf.animations };
 }
 
 function switchAnim(obj, idx) {
   if (!obj.mixer || obj.animations.length === 0) return;
   obj.actions.forEach(a => a.fadeOut(0.3));
-  const clip = obj.animations[idx] || obj.animations[0];
-  const action = obj.mixer.clipAction(clip);
+  const action = obj.mixer.clipAction(obj.animations[idx] || obj.animations[0]);
   action.reset().fadeIn(0.3).play();
   obj.actions = [action];
 }
 
 tapLayer.addEventListener('click', (e) => {
   if (!running || !templateGltf) return;
-
   const w = window.innerWidth, h = window.innerHeight;
   const nx = (e.clientX / w) * 2 - 1;
   const ny = -(e.clientY / h) * 2 + 1;
-
   const clone = cloneGltf(templateGltf);
   const model = clone.scene;
   const s = parseFloat(scaleSlider.value);
   model.scale.set(s, s, s);
   model.position.set(nx * 4.5, ny * 3.5, -1 + (Math.random() - 0.5) * 0.5);
-
   scene.add(model);
-
   const mixer = new THREE.AnimationMixer(model);
   const actions = [];
   if (clone.animations.length > 0) {
@@ -294,7 +287,6 @@ tapLayer.addEventListener('click', (e) => {
     action.play();
     actions.push(action);
   }
-
   placedObjects.push({ model, mixer, animations: clone.animations, actions });
   objBadge.textContent = placedObjects.length + '体';
   showRipple(e.clientX, e.clientY);
@@ -319,21 +311,17 @@ shutter.addEventListener('click', () => {
   flashEl.style.transition = 'opacity 0.05s';
   flashEl.style.opacity = '0.85';
   setTimeout(() => { flashEl.style.transition = 'opacity 0.4s'; flashEl.style.opacity = '0'; }, 60);
-
   const dpr = Math.min(window.devicePixelRatio, 2);
   const w = window.innerWidth * dpr, h = window.innerHeight * dpr;
   const comp = document.createElement('canvas');
   comp.width = w; comp.height = h;
   const ctx = comp.getContext('2d');
-
   const vw = video.videoWidth, vh = video.videoHeight;
   const scale = Math.max(w / vw, h / vh);
   const sw = w / scale, sh = h / scale;
   ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, w, h);
-
   renderer.render(scene, camera);
   ctx.drawImage(arCanvas, 0, 0, w, h);
-
   comp.toBlob(blob => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -351,3 +339,4 @@ function animate() {
 </script>
 </body>
 </html>
+
