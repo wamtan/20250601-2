@@ -269,11 +269,11 @@ function switchAnim(obj, idx) {
   obj.actions = [action];
 }
 
-tapLayer.addEventListener('click', (e) => {
+function placeCharacter(clientX, clientY) {
   if (!running || !templateGltf) return;
   const w = window.innerWidth, h = window.innerHeight;
-  const nx = (e.clientX / w) * 2 - 1;
-  const ny = -(e.clientY / h) * 2 + 1;
+  const nx = (clientX / w) * 2 - 1;
+  const ny = -(clientY / h) * 2 + 1;
   const clone = cloneGltf(templateGltf);
   const model = clone.scene;
   const s = parseFloat(scaleSlider.value);
@@ -289,10 +289,18 @@ tapLayer.addEventListener('click', (e) => {
   }
   placedObjects.push({ model, mixer, animations: clone.animations, actions });
   objBadge.textContent = placedObjects.length + '体';
-  showRipple(e.clientX, e.clientY);
+  showRipple(clientX, clientY);
+}
+
+tapLayer.addEventListener('click', (e) => {
+  placeCharacter(e.clientX, e.clientY);
 });
 
-tapLayer.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+tapLayer.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  placeCharacter(t.clientX, t.clientY);
+}, { passive: false });
 
 function showRipple(cx, cy) {
   const d = document.createElement('div');
@@ -339,4 +347,3 @@ function animate() {
 </script>
 </body>
 </html>
-
